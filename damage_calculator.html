@@ -77,6 +77,14 @@
             <input type="number" id="armor" value="110">
         </div>
         <div class="input-group">
+            <label for="armorLevel">护甲等级:</label>
+            <input type="number" id="armorLevel" value="1" min="1">
+        </div>
+        <div class="input-group">
+            <label for="bulletLevel">子弹等级:</label>
+            <input type="number" id="bulletLevel" value="1" min="1">
+        </div>
+        <div class="input-group">
             <label for="armorDamage">武器甲伤:</label>
             <input type="number" id="armorDamage" value="41">
         </div>
@@ -92,6 +100,7 @@
         
         <div id="result" class="result" style="display: none;">
             <h3>伤害计算结果</h3>
+            <div id="levelDiffInfo" style="margin-bottom: 10px; font-weight: bold;"></div>
             <table id="damageTable">
                 <thead>
                     <tr>
@@ -119,6 +128,10 @@
             const armorDamage = parseFloat(document.getElementById('armorDamage').value);
             const healthDamage = parseFloat(document.getElementById('healthDamage').value);
             const fireRate = parseFloat(document.getElementById('fireRate').value);
+            const armorLevel = parseInt(document.getElementById('armorLevel').value);
+            const bulletLevel = parseInt(document.getElementById('bulletLevel').value);
+            
+            const levelDiff = bulletLevel - armorLevel;
             
             let currentHealth = health;
             let currentArmor = armor;
@@ -132,14 +145,59 @@
                 let actualArmorDamage = 0;
                 let actualHealthDamage = 0;
 
-                if (currentArmor > 0) {
+                if (levelDiff >= 2) {
+                    // 等级差大于1时，同时扣除满额的血伤和甲伤
+                    actualArmorDamage = Math.min(currentArmor, armorDamage);
+                    actualHealthDamage = healthDamage;
+                } else if (levelDiff < 0) {
+                    // 等级差小于0时，需要先打碎护甲才扣除血量
+                    if (currentArmor > 0) {
+                        actualArmorDamage = Math.min(currentArmor, armorDamage);
+                        actualHealthDamage = 0;
+                        
+                        // 当碎甲临界点时，计算溢出的血伤
+                        if (actualArmorDamage === currentArmor && levelDiff === -1) {
+                            // 计算溢出部分的血伤
+                            const excessArmorDamage = armorDamage - currentArmor;
+                            if (excessArmorDamage > 0) {
+                                // 按溢出部分占总甲伤的比例计算血伤
+                                const excessRatio = excessArmorDamage / armorDamage;
+                                actualHealthDamage = healthDamage * excessRatio;
+                            }
+                        }
+                    } else {
+                        actualHealthDamage = healthDamage;
+                    }
+                } else if (currentArmor > 0) {
+                    // 等级差为0或1时
+                    const healthDamageRatio = levelDiff === 0 ? 0.5 : 0.75; // 等级差为0时血伤50%，等级差为1时血伤75%
+                    
                     if (currentArmor >= armorDamage) {
                         actualArmorDamage = armorDamage;
-                        actualHealthDamage = healthDamage / 2;
+                        actualHealthDamage = healthDamage * healthDamageRatio;
                     } else {
+                        // 护甲即将破碎时的情况
                         actualArmorDamage = currentArmor;
-                        const armorReductionRatio = currentArmor / armorDamage;
-                        actualHealthDamage = (healthDamage / 2) * (1 + (1 - armorReductionRatio));
+                        
+                        if (levelDiff === 1) {
+                            // 计算等级差为1时碎甲临界点的血伤
+                            // 1. 计算护甲能抵挡的伤害部分: 血伤 × 护甲抵扣百分比 × 0.75
+                            const armorRatio = currentArmor / armorDamage;
+                            const absorbedDamage = healthDamage * armorRatio * 0.75;
+                            
+                            // 2. 计算溢出部分的血伤: 血伤 × (1 - 护甲抵扣百分比)
+                            const excessRatio = 1 - armorRatio;
+                            const excessDamage = healthDamage * excessRatio;
+                            
+                            // 3. 合计血伤
+                            actualHealthDamage = absorbedDamage + excessDamage;
+                        } else {
+                            // 等级差为0的情况，保持原公式
+                            const armorReductionRatio = currentArmor / armorDamage;
+                            const baseHealthDamage = healthDamage * healthDamageRatio;
+                            const excessDamageMultiplier = 1 + (1 - armorReductionRatio);
+                            actualHealthDamage = baseHealthDamage * excessDamageMultiplier;
+                        }
                     }
                 } else {
                     actualHealthDamage = healthDamage;
@@ -158,12 +216,28 @@
             }
 
             const ttk = (shotCount / fireRate) * 60;
-            displayResults(results, ttk);
+            displayResults(results, ttk, levelDiff);
         }
 
-        function displayResults(results, ttk) {
+        function displayResults(results, ttk, levelDiff) {
             const tableBody = document.getElementById('damageTableBody');
             tableBody.innerHTML = '';
+            
+            // 显示等级差信息
+            const levelDiffInfo = document.getElementById('levelDiffInfo');
+            let levelDiffText = `子弹护甲等级差: ${levelDiff} (`;
+            
+            if (levelDiff >= 2) {
+                levelDiffText += "同时扣除满额的血伤和甲伤)";
+            } else if (levelDiff === 1) {
+                levelDiffText += "血伤扣除为75%)";
+            } else if (levelDiff === 0) {
+                levelDiffText += "血伤扣除为50%)";
+            } else {
+                levelDiffText += "需要先打碎护甲才扣除血量)";
+            }
+            
+            levelDiffInfo.textContent = levelDiffText;
             
             results.forEach(result => {
                 const row = document.createElement('tr');
